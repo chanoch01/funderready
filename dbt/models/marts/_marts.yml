@@ -1,0 +1,12 @@
+version: 2
+
+models:
+  - name: dq_issues
+    description: >
+      The data-quality inbox. One row per problem, written as a task a volunteer can act on,
+      e.g. "Sessions sheet, row 42: Date missing".
+    columns:
+      - name: issue_id
+        data_tests: [unique, not_null]
+      - name: task
+        data_tests: [not_null]

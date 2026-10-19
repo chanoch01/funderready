@@ -1,0 +1,44 @@
+version: 2
+
+models:
+  - name: stg_signups
+    columns:
+      - name: row_number
+        data_tests: [unique, not_null]
+      - name: person_token
+        data_tests: [not_null]
+      - name: programme
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [Football U12, Football U16, Girls Multisport]
+  - name: stg_sessions
+    columns:
+      - name: session_id
+        data_tests:
+          - unique:
+              config:
+                severity: warn
+      - name: programme
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [Football U12, Football U16, Girls Multisport]
+  - name: stg_attendance
+    columns:
+      - name: row_number
+        data_tests: [unique, not_null]
+  - name: stg_donations
+    columns:
+      - name: row_number
+        data_tests: [unique, not_null]
+      - name: status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [paid, refunded]
+      - name: currency
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [GBP]

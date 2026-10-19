@@ -1,0 +1,34 @@
+[project]
+name = "funderready"
+version = "0.1.0"
+description = "Governed funder reporting for small charities, built on the spreadsheets they already keep."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = ["httpx>=0.27"]
+
+[project.optional-dependencies]
+load = ["dlt[postgres,duckdb]>=1.4"]
+dbt = ["dbt-postgres>=1.9"]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+funderready = "funderready.cli:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["SIM905"]  # word lists read better as "a b c".split()

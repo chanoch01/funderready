@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: raw
+    description: Pseudonymised spreadsheet snapshots loaded by `funderready load`.
+    schema: "org_{{ var('org') }}_raw"
+    tables:
+      - name: signups
+        description: Sign-up form export, one row per form submission (duplicates possible).
+      - name: sessions
+        description: Sessions sheet typed by coaches.
+      - name: attendance
+        description: One row per attendee per session, names as typed.
+      - name: donations
+        description: Payment provider export.

@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev,load]"
+      - run: ruff check . && ruff format --check .
+      - run: pytest
+
+  dbt:
+    # Generates the synthetic charity, loads it, builds every model and test,
+    # then fails if the data-quality inbox misses any planted problem.
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: funderready
+          POSTGRES_PASSWORD: funderready
+          POSTGRES_DB: funderready
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U funderready -d funderready"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      DESTINATION__POSTGRES__CREDENTIALS: postgresql://funderready:funderready@localhost:5432/funderready
+      DBT_PROFILES_DIR: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[load,dbt]"
+      - run: funderready demo
+      - run: dbt build
+        working-directory: dbt
+      - run: python scripts/score_inbox.py data/demo/planted_errors.json
