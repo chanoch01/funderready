@@ -22,7 +22,7 @@ SHEET = {"signups": "Sign-ups", "sessions": "Sessions", "attendance": "Attendanc
          "donations": "Donations"}  # fmt: skip
 EXPECTED = {
     "missing_dob": {"missing_dob"},
-    "duplicate_person": {"possible_duplicate"},
+    "duplicate_person": {"possible_duplicate", "check_duplicate"},
     "session_no_date": {"session_no_date"},
     "attendee_typo": {"attendee_spelling", "attendee_unknown"},
     "attendee_unknown": {"attendee_unknown"},

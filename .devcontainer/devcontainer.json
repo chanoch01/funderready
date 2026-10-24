@@ -1,0 +1,12 @@
+{
+  "name": "FunderReady",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/funderready",
+  "postCreateCommand": "pip install -e '.[dev,load,dbt]' && sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client make",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "charliermarsh.ruff", "innoverio.vscode-dbt-power-user"]
+    }
+  }
+}

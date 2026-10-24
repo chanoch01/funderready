@@ -1,6 +1,7 @@
 """Command line entry points.
 
 funderready demo                                   # generate + load a synthetic charity
+funderready demo --seed 11 --org "Holdout 11"      # a different charity, for holdout checks
 funderready generate --out data/demo --seed 7      # just write the messy CSVs
 funderready load --org "Leith Community Sports" --folder data/demo
 funderready load --org "..." --sheet signups=<sheet-id>:<gid> --sheet sessions=...
@@ -60,7 +61,7 @@ def cmd_load(args: argparse.Namespace) -> int:
 def cmd_demo(args: argparse.Namespace) -> int:
     out = Path(args.out)
     cmd_generate(argparse.Namespace(seed=args.seed, out=out))
-    return cmd_load(argparse.Namespace(org=DEMO_ORG, folder=out, sheet=None, demo=True))
+    return cmd_load(argparse.Namespace(org=args.org, folder=out, sheet=None, demo=True))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -83,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("demo", help="Generate and load the synthetic demo organisation")
     p.add_argument("--out", default="data/demo")
     p.add_argument("--seed", type=int, default=7)
+    p.add_argument("--org", default=DEMO_ORG, help="Organisation name for the synthetic data")
     p.set_defaults(func=cmd_demo)
 
     args = parser.parse_args(argv)

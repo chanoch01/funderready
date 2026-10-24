@@ -15,16 +15,34 @@ with issues as (
     where dob_provided and dob_month is null
 
     union all
-    select 'Sign-ups', s.row_number, 'possible_duplicate',
-           'Looks like a repeat sign-up of row ' || first_row.row_number
-    from {{ ref('stg_signups') }} as s
-    inner join lateral (
-        select min(o.row_number) as row_number
-        from {{ ref('stg_signups') }} as o
-        where o.name_phonetic = s.name_phonetic
-          and o.carer_email_token = s.carer_email_token
-          and o.row_number < s.row_number
-    ) as first_row on first_row.row_number is not null
+    select 'Sign-ups', row_number, 'possible_duplicate',
+           'Repeat sign-up of row ' || first_row_number || ', merged automatically'
+    from {{ ref('int_signups_resolved') }}
+    where not is_first_signup
+
+    union all
+    select 'Sign-ups', row_b, 'check_duplicate',
+           'Same child as row ' || row_a || '? Some details match (' ||
+           case
+               when evidence like '%name_phonetic=disagree%' then 'different name, '
+               else 'similar name, '
+           end ||
+           case
+               when evidence like '%carer_contact=agree%' then 'same carer contact'
+               else 'different carer contact'
+           end ||
+           case when evidence like '%dob_month=agree%' then ', same birth month' else '' end ||
+           '). Twins, or a repeat sign-up? Record the answer in match_decisions.csv'
+    from {{ ref('int_signup_match_scores') }}
+    where decision = 'review'
+
+    union all
+    select 'Sign-ups', s.row_number, 'dob_conflict',
+           'This child''s sign-ups give different dates of birth'
+    from {{ ref('dim_people') }} as p
+    inner join {{ ref('int_signups_resolved') }} as s
+        on s.person_id = p.person_id and s.is_first_signup
+    where p.has_dob_conflict
 
     union all
     select 'Sessions', row_number, 'session_no_date',
@@ -57,7 +75,7 @@ with issues as (
 )
 
 select
-    md5(sheet || '|' || row_number || '|' || issue_type) as issue_id,
+    md5(sheet || '|' || row_number || '|' || issue_type || '|' || message) as issue_id,
     sheet,
     row_number,
     issue_type,

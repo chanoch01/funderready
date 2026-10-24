@@ -13,6 +13,14 @@ Planted problems:
   attendee_unknown   attendance name for someone who never signed up
   amount_text        donation amount typed as text, e.g. "twenty"
 
+Hard cases for duplicate matching (not errors, so not in the manifest):
+  siblings           children who share a carer's email and phone, sometimes twins with
+                     the same date of birth; matching on carer details alone merges them
+  second parent      some repeat sign-ups come from the other parent's email and phone
+
+`truth.json` records which synthetic child is behind every sign-up and attendance row, so
+duplicate resolution can be scored for precision and recall. It is never loaded.
+
 None of the people are real: names are random combinations of common first and last names.
 """
 
@@ -41,6 +49,8 @@ POSTCODE_DISTRICTS = ["EH6", "EH7", "EH5", "EH4", "EH8"]
 class Dataset:
     sheets: dict[str, list[dict[str, str]]] = field(default_factory=dict)
     planted: list[dict[str, object]] = field(default_factory=list)
+    # sheet -> one entry per data row: the synthetic child's id, or None (a visitor)
+    truth: dict[str, list[int | None]] = field(default_factory=dict)
 
     def plant(self, sheet: str, row: int, kind: str) -> None:
         # Spreadsheet row numbers: header is row 1, so the first record is row 2.
@@ -78,20 +88,39 @@ def generate(seed: int = 7, n_children: int = 180, weeks: int = 26) -> Dataset:
     # --- sign-ups (Google Form export) -------------------------------------------------
     children = []
     seen = set()
+
+    def age_for(programme: str) -> int:
+        return rng.randint(9, 11) if programme == "Football U12" else rng.randint(12, 15)
+
     while len(children) < n_children:
-        first, last = rng.choice(FIRST), rng.choice(LAST)
+        sibling_of = rng.choice(children) if children and rng.random() < 0.12 else None
+        first = rng.choice(FIRST)
+        last = sibling_of["last"] if sibling_of else rng.choice(LAST)
         if (first, last) in seen:
             continue
         seen.add((first, last))
-        programme = rng.choice(PROGRAMMES)
-        age = rng.randint(9, 11) if programme == "Football U12" else rng.randint(12, 15)
-        dob = date(2026 - age, rng.randint(1, 12), rng.randint(1, 28))
+        family = [c for c in children if sibling_of and c["carer"] == sibling_of["carer"]]
+        has_twin = any(a["dob"] == b["dob"] for a in family for b in family if a is not b)
+        if sibling_of and not has_twin and rng.random() < 0.2:
+            # twins: same date of birth and programme (only ever a pair)
+            programme, dob = sibling_of["programme"], sibling_of["dob"]
+        else:
+            for _ in range(100):  # siblings who are not twins are born 10+ months apart
+                programme = rng.choice(PROGRAMMES)
+                dob = date(2026 - age_for(programme), rng.randint(1, 12), rng.randint(1, 28))
+                if all(abs((dob - c["dob"]).days) > 300 for c in family):
+                    break
+            else:
+                seen.discard((first, last))
+                continue
         children.append(
             {"first": first, "last": last, "dob": dob, "programme": programme,
-             "district": rng.choice(POSTCODE_DISTRICTS)}
+             "district": sibling_of["district"] if sibling_of else rng.choice(POSTCODE_DISTRICTS),
+             "carer": sibling_of["carer"] if sibling_of else len(children)}
         )  # fmt: skip
 
     signups: list[dict[str, str]] = []
+    truth: list[int | None] = []
     for idx, c in enumerate(children):
         submitted = datetime(2025, 12, 1, 9) + timedelta(hours=rng.randrange(0, 24 * 120))
         row = {
@@ -102,23 +131,32 @@ def generate(seed: int = 7, n_children: int = 180, weeks: int = 26) -> Dataset:
             "Postcode": f"{c['district']} {rng.randint(1, 9)}"
             f"{rng.choice('ABDEFGHJ')}{rng.choice('LNPQRSTU')}",
             "Programme": c["programme"],
-            "Parent/carer email": f"carer{idx}@example.org",
-            "Phone": f"07700 900{idx % 1000:03d}",  # Ofcom drama range, never a real number
+            "Parent/carer email": f"carer{c['carer']}@example.org",
+            # Ofcom drama range, never a real number
+            "Phone": f"07700 900{c['carer'] % 1000:03d}",
             "Consent to photos": rng.choice(["Yes", "No", "yes", "Y"]),
         }
         if rng.random() < 0.08:
             row["Date of birth"] = ""
             ds.plant("signups", len(signups) + 2, "missing_dob")
         signups.append(row)
+        truth.append(idx)
         if rng.random() < 0.06:  # parent fills the form in again
             dup = dict(row)
             dup["First name"] = _typo(c["first"], rng)
             dup["Timestamp"] = (submitted + timedelta(days=rng.randint(1, 20))).strftime(
                 "%d/%m/%Y %H:%M:%S"
             )
+            if row["Date of birth"] and rng.random() < 0.5:  # retyped in another format
+                dup["Date of birth"] = _fmt_date(c["dob"], rng)
+            if rng.random() < 0.35:  # the other parent fills it in
+                dup["Parent/carer email"] = f"carer{c['carer']}.b@example.org"
+                dup["Phone"] = f"07700 901{c['carer'] % 1000:03d}"
             signups.append(dup)
+            truth.append(idx)
             ds.plant("signups", len(signups) + 1, "duplicate_person")
     ds.sheets["signups"] = signups
+    ds.truth["signups"] = truth
 
     # --- sessions (sheet typed by coaches) ---------------------------------------------
     sessions: list[dict[str, str]] = []
@@ -142,13 +180,17 @@ def generate(seed: int = 7, n_children: int = 180, weeks: int = 26) -> Dataset:
 
     # --- attendance (one row per child per session) ------------------------------------
     attendance: list[dict[str, str]] = []
-    by_programme = {p: [c for c in children if c["programme"] == p] for p in PROGRAMMES}
+    attendance_truth: list[int | None] = []
+    by_programme = {
+        p: [(i, c) for i, c in enumerate(children) if c["programme"] == p] for p in PROGRAMMES
+    }
     for d, programme in session_keys:
         pool = by_programme[programme]
-        for c in rng.sample(pool, k=min(len(pool), rng.randint(8, 16))):
+        for idx, c in rng.sample(pool, k=min(len(pool), rng.randint(8, 16))):
             name = f"{c['first']} {c['last']}"
             row = {"Date": _fmt_date(d, rng), "Programme": programme, "Attendee": name}
             r = rng.random()
+            who: int | None = idx
             if r < 0.04:
                 row["Attendee"] = f"{_typo(c['first'], rng)} {c['last']}"
                 if row["Attendee"].lower() != name.lower():
@@ -156,8 +198,11 @@ def generate(seed: int = 7, n_children: int = 180, weeks: int = 26) -> Dataset:
             elif r < 0.05:
                 row["Attendee"] = f"{rng.choice(FIRST)} Visitor"
                 ds.plant("attendance", len(attendance) + 2, "attendee_unknown")
+                who = None
             attendance.append(row)
+            attendance_truth.append(who)
     ds.sheets["attendance"] = attendance
+    ds.truth["attendance"] = attendance_truth
 
     # --- donations (payment provider export) -------------------------------------------
     donations: list[dict[str, str]] = []
@@ -192,4 +237,9 @@ def write(ds: Dataset, folder: Path) -> list[Path]:
             writer.writerows(rows)
         paths.append(path)
     (folder / "planted_errors.json").write_text(json.dumps(ds.planted, indent=2))
+    # spreadsheet row number -> synthetic child id; read only by the scoring scripts
+    truth = {
+        sheet: {str(i + 2): child for i, child in enumerate(ids)} for sheet, ids in ds.truth.items()
+    }
+    (folder / "truth.json").write_text(json.dumps(truth, indent=1))
     return paths

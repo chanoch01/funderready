@@ -19,8 +19,10 @@ jobs:
       - run: pytest
 
   dbt:
-    # Generates the synthetic charity, loads it, builds every model and test,
-    # then fails if the data-quality inbox misses any planted problem.
+    # Generates the synthetic charity, loads it, builds every model and test, then fails if
+    # the data-quality inbox misses a planted problem, or if duplicate resolution drops below
+    # its precision/recall floors on three charities the threshold was not tuned on.
+    # The pair-build exercises (tag:exercise) are excluded.
     runs-on: ubuntu-latest
     services:
       db:
@@ -44,6 +46,16 @@ jobs:
           cache: pip
       - run: pip install -e ".[load,dbt]"
       - run: funderready demo
-      - run: dbt build
+      - run: dbt build --exclude tag:exercise
         working-directory: dbt
       - run: python scripts/score_inbox.py data/demo/planted_errors.json
+      - name: Holdout charities
+        run: |
+          for s in 11 23 42; do
+            funderready demo --seed $s --org "Holdout $s" --out data/holdout_$s
+            (cd dbt && dbt build -q --vars "{org: holdout_$s}" --exclude tag:exercise)
+          done
+      - run: >
+          python scripts/score_matching.py data/demo/truth.json
+          data/holdout_11/truth.json:holdout_11 data/holdout_23/truth.json:holdout_23
+          data/holdout_42/truth.json:holdout_42

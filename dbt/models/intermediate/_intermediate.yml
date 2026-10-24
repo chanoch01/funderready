@@ -1,0 +1,91 @@
+version: 2
+
+models:
+  - name: int_match_weights
+    description: Fellegi-Sunter agree/disagree weights per matching feature.
+    columns:
+      - name: feature
+        data_tests: [unique, not_null]
+      - name: u_probability
+        data_tests: [not_null]
+
+  - name: int_signup_candidate_pairs
+    description: Pairs of sign-ups that share a blocking key, with per-feature evidence.
+    columns:
+      - name: row_a
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_signups')
+                field: row_number
+
+  - name: int_signup_match_scores
+    description: Each candidate pair's match weight and decision (match / review / distinct).
+    columns:
+      - name: decision
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [match, review, distinct]
+      - name: decided_by
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [score, person]
+
+  - name: int_signups_resolved
+    description: The resolved person behind every sign-up row.
+    columns:
+      - name: row_number
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_signups')
+                field: row_number
+      - name: person_id
+        data_tests: [not_null]
+
+  - name: int_attendance_matched
+    columns:
+      - name: row_number
+        data_tests: [unique, not_null]
+      - name: match_method
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [exact, phonetic, unmatched]
+
+unit_tests:
+  - name: a_recorded_decision_overrides_the_score
+    description: >
+      A person's answer in match_decisions.csv wins over the score, matched on the name
+      tokens in either order, so it survives re-sorting and reloads.
+    model: int_signup_match_scores
+    overrides:
+      vars: {match_threshold: 14, review_threshold: 4}
+    given:
+      - input: ref('int_signup_candidate_pairs')
+        rows:
+          - {row_a: 2, row_b: 3, person_token_a: tok_rory, person_token_b: tok_wei, name_exact: disagree, name_phonetic: disagree, carer_contact: agree, dob_month: agree, postcode_district: agree, programme: agree}
+          - {row_a: 5, row_b: 9, person_token_a: tok_ava, person_token_b: tok_ava, name_exact: agree, name_phonetic: agree, carer_contact: agree, dob_month: agree, postcode_district: agree, programme: agree}
+          - {row_a: 7, row_b: 8, person_token_a: tok_leo, person_token_b: tok_lewis, name_exact: disagree, name_phonetic: disagree, carer_contact: agree, dob_month: agree, postcode_district: agree, programme: agree}
+      - input: ref('int_match_weights')
+        rows:
+          - {feature: name_exact, agree_weight: 10, disagree_weight: -1}
+          - {feature: name_phonetic, agree_weight: 10, disagree_weight: -4}
+          - {feature: carer_contact, agree_weight: 8, disagree_weight: -1.5}
+          - {feature: dob_month, agree_weight: 6, disagree_weight: -4}
+          - {feature: postcode_district, agree_weight: 2, disagree_weight: -4}
+          - {feature: programme, agree_weight: 1.5, disagree_weight: -3}
+      - input: ref('match_decisions')
+        rows:
+          - {person_token_a: tok_wei, person_token_b: tok_rory, decision: different}
+    expect:
+      rows:
+        - {row_a: 2, row_b: 3, match_weight: '12.50', decision: distinct, decided_by: person}
+        - {row_a: 5, row_b: 9, match_weight: '37.50', decision: match, decided_by: score}
+        - {row_a: 7, row_b: 8, match_weight: '12.50', decision: review, decided_by: score}

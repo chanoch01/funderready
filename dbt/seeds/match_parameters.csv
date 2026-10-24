@@ -1,0 +1,7 @@
+feature,m_probability,description
+name_exact,0.60,"Same full name after normalising. Repeat sign-ups often have a typo, so only 60% agree"
+name_phonetic,0.95,"Same Soundex code for every name part. Survives most typos"
+carer_contact,0.65,"Same carer email or phone. The other parent fills in about a third of repeat sign-ups"
+dob_month,0.95,"Same year and month of birth, when both are known"
+postcode_district,0.95,"Same postcode district"
+programme,0.90,"Same programme"

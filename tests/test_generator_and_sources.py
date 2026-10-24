@@ -80,3 +80,42 @@ def test_google_sheet_reader_uses_csv_export_and_rejects_private_sheets():
 
     with pytest.raises(RuntimeError, match="anyone with the link"):
         list(read_google_sheet("abc", transport=httpx.MockTransport(login_page)))
+
+
+def test_truth_records_the_child_behind_every_row(tmp_path):
+    ds = generator.generate(seed=7)
+    assert len(ds.truth["signups"]) == len(ds.sheets["signups"])
+    assert len(ds.truth["attendance"]) == len(ds.sheets["attendance"])
+
+    # every planted repeat sign-up belongs to the same child as an earlier row
+    for p in ds.planted:
+        if p["type"] == "duplicate_person":
+            child = ds.truth["signups"][p["row"] - 2]
+            assert child in ds.truth["signups"][: p["row"] - 2]
+        if p["type"] == "attendee_unknown":
+            assert ds.truth["attendance"][p["row"] - 2] is None
+
+    generator.write(ds, tmp_path)
+    truth = json.loads((tmp_path / "truth.json").read_text())
+    assert truth["signups"]["2"] == ds.truth["signups"][0]  # keyed by spreadsheet row
+
+
+def test_the_hard_cases_for_matching_are_present():
+    ds = generator.generate(seed=7)
+    rows = ds.sheets["signups"]
+    by_carer: dict[str, set[str]] = {}
+    for r in rows:
+        by_carer.setdefault(r["Parent/carer email"], set()).add(r["First name"].lower())
+    # siblings: one carer email, different children
+    assert sum(len(names) > 1 for names in by_carer.values()) >= 10
+    # repeat sign-ups from the other parent
+    assert any(r["Parent/carer email"].endswith(".b@example.org") for r in rows)
+    # twins: same carer and date of birth, different child
+    seen: dict[tuple[str, str], int] = {}
+    twins = 0
+    for r, child in zip(rows, ds.truth["signups"], strict=True):
+        key = (r["Parent/carer email"], r["Date of birth"])
+        if r["Date of birth"] and key in seen and seen[key] != child:
+            twins += 1
+        seen.setdefault(key, child)
+    assert twins >= 1

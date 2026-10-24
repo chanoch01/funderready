@@ -4,6 +4,7 @@ config-version: 2
 profile: funderready
 
 model-paths: ["models"]
+seed-paths: ["seeds"]
 macro-paths: ["macros"]
 test-paths: ["tests"]
 
@@ -11,6 +12,10 @@ vars:
   # Which organisation to build, e.g. --vars '{org: leith_community_sports}'.
   # Raw data is read from org_<org>_raw; models are written to org_<org>_<layer>.
   org: leith_community_sports
+  # Duplicate resolution: pairs scoring at least match_threshold are merged; pairs between
+  # the two thresholds go to the data-quality inbox for a person to check.
+  match_threshold: 14
+  review_threshold: 4
 
 models:
   funderready:
@@ -23,3 +28,17 @@ models:
     marts:
       +materialized: table
       +schema: marts
+    exercises:
+      +materialized: view
+      +schema: marts
+
+seeds:
+  funderready:
+    +schema: reference
+    match_decisions:
+      +column_types:
+        person_token_a: text
+        person_token_b: text
+        decision: text
+        decided_by: text
+        decided_on: date

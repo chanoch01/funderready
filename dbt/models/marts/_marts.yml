@@ -10,3 +10,66 @@ models:
         data_tests: [unique, not_null]
       - name: task
         data_tests: [not_null]
+
+  - name: dim_people
+    description: One row per child after duplicate resolution.
+    columns:
+      - name: person_id
+        data_tests: [unique, not_null]
+      - name: n_signups
+        data_tests: [not_null]
+      - name: programme
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [Football U12, Football U16, Girls Multisport]
+
+  - name: fct_sessions
+    description: One row per session with a readable date.
+    columns:
+      - name: session_id
+        data_tests: [unique, not_null]
+      - name: session_date
+        data_tests: [not_null]
+      - name: programme
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [Football U12, Football U16, Girls Multisport]
+
+  - name: fct_attendance
+    description: One row per child per session attended; visitors have a null person_id.
+    columns:
+      - name: attendance_id
+        data_tests: [unique, not_null]
+      - name: session_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_sessions')
+                field: session_id
+      - name: person_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_people')
+                field: person_id
+      - name: match_method
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [exact, phonetic, unmatched]
+
+  - name: fct_donations
+    description: One row per donation; filter on is_countable for funder totals.
+    columns:
+      - name: donation_id
+        data_tests: [unique, not_null]
+      - name: status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [paid, refunded]
+      - name: is_countable
+        data_tests: [not_null]
